@@ -33,7 +33,7 @@ class Create_from_depth_map():
         self.width = width
         self.depth_trunc = depth_trunc
         self.cam_pos_cam_coord = torch.tensor([0, 0, 0])
-        i_coords, j_coords = torch.meshgrid(torch.range(0,height-1), torch.range(0,width-1), indexing='ij')
+        i_coords, j_coords = torch.meshgrid(torch.arange(0,height), torch.arange(0,width), indexing='ij')
         coord_mat = torch.cat((j_coords[..., None], i_coords[..., None]), dim=-1)
         principal_point_mat = torch.tensor([self.principal_point[0], self.principal_point[1]])
         principal_point_mat = principal_point_mat.reshape(1, 1, 2)

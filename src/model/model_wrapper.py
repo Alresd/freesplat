@@ -51,8 +51,13 @@ import json
 def convert_array_to_pil(depth_map, no_text=False):
     # Input: depth_map -> HxW numpy array with depth values 
     # Output: colormapped_im -> HxW numpy array with colorcoded depth values
+    # Ensure depth_map is 2D
+    if len(depth_map.shape) > 2:
+        depth_map = depth_map.squeeze()
+
     mask = depth_map!=0
-    disp_map = 1/depth_map
+    disp_map = 1/(depth_map + 1e-8)
+
     vmax = np.percentile(disp_map[mask], 95)
     vmin = np.percentile(disp_map[mask], 5)
     normalizer = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
