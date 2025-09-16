@@ -424,6 +424,9 @@ class ModelWrapper(LightningModule):
         save_gt_images_enabled = self.test_cfg.save_gt_image
         save_video_enabled = self.test_cfg.save_video
 
+        print(f"DEBUG: Configuration - save_image={save_images_enabled}, save_input_images={save_input_images_enabled}, save_gt_image={save_gt_images_enabled}, save_video={save_video_enabled}")
+        print(f"DEBUG: base_path = {base_path}")
+
         # Save input context images for visualization
         if save_input_images_enabled:
             input_images = batch["context"]["image"][0]  # [V, 3, H, W]
@@ -475,7 +478,9 @@ class ModelWrapper(LightningModule):
         rgb_gt = batch["target"]["image"][0]
 
         # Save rendered and ground truth images with better organization
+        print(f"DEBUG: About to check save_images_enabled = {save_images_enabled}")
         if save_images_enabled:
+            print(f"DEBUG: Entering image saving loop for scene {scene}")
             for index, color, color_gt in zip(batch["target"]["index"][0], images_prob, rgb_gt):
                 if not test_fvs:
                     # Save rendered images
@@ -573,36 +578,41 @@ class ModelWrapper(LightningModule):
 
         # Save scene-specific metrics to file (similar to BEV-Splat implementation)
         if save_images_enabled:
-            try:
-                import json
-                metrics_file = base_path / "scene_metrics.txt"
-                with open(metrics_file, "a") as f:
-                    f.write(f"{scene}: psnr={psnr:.4f}, lpips={lpips:.4f}, ssim={ssim:.4f}\n")
+            import json
+            print(f"DEBUG: Saving metrics for scene {scene}, base_path = {base_path}")
+            print(f"DEBUG: save_images_enabled = {save_images_enabled}")
 
-                # 将scene和lpips写入txt文件
-                with open(base_path / "scene_lpips.txt", "a") as f:
-                    f.write(f"{scene}: {lpips:.6f}\n")
+            metrics_file = base_path / "scene_metrics.txt"
+            print(f"DEBUG: Writing to metrics_file: {metrics_file}")
+            with open(metrics_file, "a") as f:
+                f.write(f"{scene}: psnr={psnr:.4f}, lpips={lpips:.4f}, ssim={ssim:.4f}\n")
 
-                # Also save detailed metrics as JSON
-                scene_metrics = {
-                    "scene": scene,
-                    "psnr_inter": float(psnr),
-                    "lpips_inter": float(lpips),
-                    "ssim_inter": float(ssim),
-                    "num_inter": float(num),
-                    "depth_abs_diff": float(abs_diff.detach().cpu().numpy()),
-                    "depth_rel_diff": float(rel_diff.detach().cpu().numpy()),
-                    "depth_delta_25": float(delta_25.detach().cpu().numpy()),
-                    "depth_delta_10": float(delta_10.detach().cpu().numpy()),
-                    "num_gaussians": encoder_results['num_gaussians']
-                }
+            # 将scene和lpips写入txt文件
+            lpips_file = base_path / "scene_lpips.txt"
+            print(f"DEBUG: Writing to lpips_file: {lpips_file}")
+            with open(lpips_file, "a") as f:
+                f.write(f"{scene}: {lpips:.6f}\n")
 
-                scene_json_file = base_path / "scene_detailed_metrics.jsonl"
-                with open(scene_json_file, "a") as f:
-                    f.write(json.dumps(scene_metrics) + "\n")
+            # Also save detailed metrics as JSON
+            scene_metrics = {
+                "scene": scene,
+                "psnr_inter": float(psnr),
+                "lpips_inter": float(lpips),
+                "ssim_inter": float(ssim),
+                "num_inter": float(num),
+                "depth_abs_diff": float(abs_diff.detach().cpu().numpy()),
+                "depth_rel_diff": float(rel_diff.detach().cpu().numpy()),
+                "depth_delta_25": float(delta_25.detach().cpu().numpy()),
+                "depth_delta_10": float(delta_10.detach().cpu().numpy()),
+                "num_gaussians": encoder_results['num_gaussians']
+            }
 
-            except Exception as e:
-                print(f"Warning: Failed to save scene metrics: {e}")
+            scene_json_file = base_path / "scene_detailed_metrics.jsonl"
+            print(f"DEBUG: Writing to json_file: {scene_json_file}")
+            with open(scene_json_file, "a") as f:
+                f.write(json.dumps(scene_metrics) + "\n")
+
+            print(f"DEBUG: Successfully saved metrics for scene {scene}")
 
 
     def execute_test_end(self):
