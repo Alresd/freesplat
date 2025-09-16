@@ -408,6 +408,26 @@ class ModelWrapper(LightningModule):
         self.test_scene_list.append(scene)
         name = get_cfg()["wandb"]["name"]
         path = self.test_cfg.output_path / name
+
+        # Enhanced image saving based on BEV-Splat implementation
+        from pathlib import Path
+        import os
+        base_path = Path(get_cfg()["output_dir"])
+
+        # Check if image saving is enabled (default to True for compatibility)
+        save_images_enabled = getattr(self.test_cfg, 'save_image', True)
+        save_input_images_enabled = getattr(self.test_cfg, 'save_input_images', True)
+        save_gt_images_enabled = getattr(self.test_cfg, 'save_gt_image', True)
+        save_video_enabled = getattr(self.test_cfg, 'save_video', False)
+
+        # Save input context images for visualization
+        if save_input_images_enabled:
+            input_images = batch["context"]["image"][0]  # [V, 3, H, W]
+            index = batch["context"]["index"][0]
+            for idx, color in zip(index, input_images):
+                save_dir = base_path / "images" / scene / "color"
+                save_dir.mkdir(parents=True, exist_ok=True)
+                save_image(color, save_dir / f"input_{idx:0>6}.png")
         abs_diff, rel_diff, delta_25, delta_10 = depth_render_metrics(output, batch)
         print(f'abs_diff: {abs_diff}, rel_diff: {rel_diff}, delta_25: {delta_25}, delta_10: {delta_10}')
         self.benchmarker.store('depth_abs_diff', float(abs_diff.detach().cpu().numpy()))
@@ -446,18 +466,63 @@ class ModelWrapper(LightningModule):
                                                 .astype(np.float32)/255).to(batch["context"]["image"][0].device),
                                                 path / scene / f"depth_render_gt/{index:0>6}.png")
 
-        for index, color, color_gt in zip(batch["target"]["index"][0], output.color[0], batch["target"]["image"][0]):
-            if not test_fvs:
-                save_image(color, path / scene / f"color/{index:0>6}.png")
-                save_image(color_gt, path / scene / f"color_gt/{index:0>6}.png")
-            else:
-                if count < batch["target"]["index"][0].shape[0]-fvs_length:
-                    save_image(color, path / scene / f"interpolation/{index:0>6}.png")
-                    save_image(color_gt, path / scene / f"interapolation_gt/{index:0>6}.png")
+        # Enhanced rendering image saving
+        images_prob = output.color[0]
+        rgb_gt = batch["target"]["image"][0]
+
+        # Save rendered and ground truth images with better organization
+        if save_images_enabled:
+            for index, color, color_gt in zip(batch["target"]["index"][0], images_prob, rgb_gt):
+                if not test_fvs:
+                    # Save rendered images
+                    color_dir = base_path / "images" / scene / "color"
+                    color_dir.mkdir(parents=True, exist_ok=True)
+                    save_image(color, color_dir / f"{index:0>6}.png")
+
+                    # Save ground truth images if enabled
+                    if save_gt_images_enabled:
+                        save_image(color_gt, color_dir / f"{index:0>6}_gt.png")
+
+                    # Also save to original path for compatibility
+                    save_image(color, path / scene / f"color/{index:0>6}.png")
+                    save_image(color_gt, path / scene / f"color_gt/{index:0>6}.png")
                 else:
-                    save_image(color, path / scene / f"extrapolation/{index:0>6}.png")
-                    save_image(color_gt, path / scene / f"extrapolation_gt/{index:0>6}.png")
-                count += 1
+                    if count < batch["target"]["index"][0].shape[0]-fvs_length:
+                        interp_dir = base_path / "images" / scene / "interpolation"
+                        interp_dir.mkdir(parents=True, exist_ok=True)
+                        save_image(color, interp_dir / f"{index:0>6}.png")
+                        if save_gt_images_enabled:
+                            save_image(color_gt, interp_dir / f"{index:0>6}_gt.png")
+
+                        # Original paths for compatibility
+                        save_image(color, path / scene / f"interpolation/{index:0>6}.png")
+                        save_image(color_gt, path / scene / f"interapolation_gt/{index:0>6}.png")
+                    else:
+                        extrap_dir = base_path / "images" / scene / "extrapolation"
+                        extrap_dir.mkdir(parents=True, exist_ok=True)
+                        save_image(color, extrap_dir / f"{index:0>6}.png")
+                        if save_gt_images_enabled:
+                            save_image(color_gt, extrap_dir / f"{index:0>6}_gt.png")
+
+                        # Original paths for compatibility
+                        save_image(color, path / scene / f"extrapolation/{index:0>6}.png")
+                        save_image(color_gt, path / scene / f"extrapolation_gt/{index:0>6}.png")
+                    count += 1
+
+        # Save video if enabled
+        if save_video_enabled:
+            try:
+                from ..misc.image_io import save_video
+                frame_str = "_".join([str(x.item()) for x in batch["context"]["index"][0]])
+                video_dir = base_path / "videos"
+                video_dir.mkdir(parents=True, exist_ok=True)
+                save_video(
+                    [img for img in images_prob],
+                    video_dir / f"{scene}_frame_{frame_str}.mp4",
+                )
+                print(f"Video saved: {video_dir / f'{scene}_frame_{frame_str}.mp4'}")
+            except Exception as e:
+                print(f"Warning: Failed to save video: {e}")
         
         if not test_fvs:
             psnr, lpips, ssim, num = compute_metrics(batch["target"]["image"][0], output.color[0])
@@ -501,6 +566,39 @@ class ModelWrapper(LightningModule):
         self.all_metrics['depth_delta_25'].append(float(delta_25.detach().cpu().numpy()))
         self.all_metrics['depth_delta_10'].append(float(delta_10.detach().cpu().numpy()))
         self.all_metrics['num_gaussians'].append(encoder_results['num_gaussians'])
+
+        # Save scene-specific metrics to file (similar to BEV-Splat implementation)
+        if save_images_enabled:
+            try:
+                import json
+                metrics_file = base_path / "scene_metrics.txt"
+                with open(metrics_file, "a") as f:
+                    f.write(f"{scene}: psnr={psnr:.4f}, lpips={lpips:.4f}, ssim={ssim:.4f}\n")
+
+                # 将scene和lpips写入txt文件
+                with open(base_path / "scene_lpips.txt", "a") as f:
+                    f.write(f"{scene}: {lpips:.6f}\n")
+
+                # Also save detailed metrics as JSON
+                scene_metrics = {
+                    "scene": scene,
+                    "psnr_inter": float(psnr),
+                    "lpips_inter": float(lpips),
+                    "ssim_inter": float(ssim),
+                    "num_inter": float(num),
+                    "depth_abs_diff": float(abs_diff.detach().cpu().numpy()),
+                    "depth_rel_diff": float(rel_diff.detach().cpu().numpy()),
+                    "depth_delta_25": float(delta_25.detach().cpu().numpy()),
+                    "depth_delta_10": float(delta_10.detach().cpu().numpy()),
+                    "num_gaussians": encoder_results['num_gaussians']
+                }
+
+                scene_json_file = base_path / "scene_detailed_metrics.jsonl"
+                with open(scene_json_file, "a") as f:
+                    f.write(json.dumps(scene_metrics) + "\n")
+
+            except Exception as e:
+                print(f"Warning: Failed to save scene metrics: {e}")
 
 
     def execute_test_end(self):
