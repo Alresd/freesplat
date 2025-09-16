@@ -53,6 +53,10 @@ train:
 
 test:
   output_path: outputs/test
+  save_image: true
+  save_input_images: true
+  save_gt_image: true
+  save_video: false
 
 seed: 111123
 
