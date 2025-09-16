@@ -125,6 +125,10 @@ class OptimizerCfg:
 @dataclass
 class TestCfg:
     output_path: Path
+    save_image: bool = True
+    save_input_images: bool = True
+    save_gt_image: bool = True
+    save_video: bool = False
 
 
 @dataclass
@@ -414,11 +418,11 @@ class ModelWrapper(LightningModule):
         import os
         base_path = Path(get_cfg()["output_dir"])
 
-        # Check if image saving is enabled (default to True for compatibility)
-        save_images_enabled = getattr(self.test_cfg, 'save_image', True)
-        save_input_images_enabled = getattr(self.test_cfg, 'save_input_images', True)
-        save_gt_images_enabled = getattr(self.test_cfg, 'save_gt_image', True)
-        save_video_enabled = getattr(self.test_cfg, 'save_video', False)
+        # Check if image saving is enabled
+        save_images_enabled = self.test_cfg.save_image
+        save_input_images_enabled = self.test_cfg.save_input_images
+        save_gt_images_enabled = self.test_cfg.save_gt_image
+        save_video_enabled = self.test_cfg.save_video
 
         # Save input context images for visualization
         if save_input_images_enabled:
